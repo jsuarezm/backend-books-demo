@@ -1,0 +1,147 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  BooksUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      UserPoolName: BooksUsers
+      UsernameAttributes:
+      - email
+      AutoVerifiedAttributes:
+      - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+  BooksUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref BooksUserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: ['code']
+      CallbackURLs: ['http://localhost:3000/']
+      LogoutURLs: ['http://localhost:3000/']
+      AllowedOAuthScopes: ['phone', 'email', 'openid', 'profile']
+      SupportedIdentityProviders:
+        - COGNITO
+      ExplicitAuthFlows:
+      - ALLOW_REFRESH_TOKEN_AUTH
+      - ALLOW_USER_PASSWORD_AUTH
+      - ALLOW_USER_SRP_AUTH
+  BooksDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties: 
+      Domain: !Join ['-', ["booksappdemo", !Ref AWS::StackName]]
+      UserPoolId: !Ref BooksUserPool    
+  BooksApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Cors: 
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      GatewayResponses:
+        DEFAULT_4xx:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5xx:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"      
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt BooksUserPool.Arn            
+  DynamoBooksTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: books
+      PrimaryKey:
+        Name: id
+        Type: String
+  CreateBookFunction: # 1
+    Type: AWS::Serverless::Function # 2
+    Properties:
+      CodeUri: src/ # 3
+      Handler: create-book.handler # 4
+      Policies: AmazonDynamoDBFullAccess # 5
+      Runtime: nodejs14.x
+      Events:
+        CreateBook: # 6
+          Type: Api
+          Properties:
+            RestApiId: !Ref BooksApi
+            Path: /books #7
+            Method: post
+            Auth:
+              Authorizer: CognitoAuthorizer
+  GetBooksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: get-books.handler
+      Policies: AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Events:
+        GetBooks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BooksApi
+            Path: /ubooks
+            Method: get
+  GetBooksSecFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: get-book.handler
+      Policies: AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Events:
+        GetBook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BooksApi
+            Path: /books
+            Method: get
+            Auth:
+              Authorizer: CognitoAuthorizer
+  UpdateBookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: update-book.handler
+      Policies: AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Events:
+        UpdateBook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BooksApi
+            Path: /books/{id}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+  DeleteBookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: delete-book.handler
+      Policies: AmazonDynamoDBFullAccess
+      Runtime: nodejs14.x
+      Events:
+        DeleteBook:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BooksApi
+            Path: /books/{id}
+            Method: delete
+            Auth:
+              Authorizer: CognitoAuthorizer                              
